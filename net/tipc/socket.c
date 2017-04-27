@@ -115,7 +115,8 @@ static void tipc_data_ready(struct sock *sk);
 static void tipc_write_space(struct sock *sk);
 static void tipc_sock_destruct(struct sock *sk);
 static int tipc_release(struct socket *sock);
-static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags);
+static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags,
+		       bool kern);
 static void tipc_sk_timeout(unsigned long data);
 static int tipc_sk_publish(struct tipc_sock *tsk, uint scope,
 			   struct tipc_name_seq const *seq);
@@ -1082,7 +1083,7 @@ static int __tipc_sendstream(struct socket *sock, struct msghdr *m, size_t dlen)
 		}
 	} while (sent < dlen && !rc);
 
-	return rc ? rc : sent;
+	return sent ? sent : rc;
 }
 
 /**
@@ -1483,7 +1484,7 @@ restart:
 	if (unlikely(flags & MSG_PEEK))
 		goto exit;
 
-	tsk->rcv_unacked += tsk_inc(tsk, hlen + sz);
+	tsk->rcv_unacked += tsk_inc(tsk, hlen + msg_data_sz(msg));
 	if (unlikely(tsk->rcv_unacked >= (tsk->rcv_win / 4)))
 		tipc_sk_send_ack(tsk);
 	tsk_advance_rx_queue(sk);
@@ -2029,7 +2030,8 @@ static int tipc_wait_for_accept(struct socket *sock, long timeo)
  *
  * Returns 0 on success, errno otherwise
  */
-static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags)
+static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags,
+		       bool kern)
 {
 	struct sock *new_sk, *sk = sock->sk;
 	struct sk_buff *buf;
@@ -2051,7 +2053,7 @@ static int tipc_accept(struct socket *sock, struct socket *new_sock, int flags)
 
 	buf = skb_peek(&sk->sk_receive_queue);
 
-	res = tipc_sk_create(sock_net(sock->sk), new_sock, 0, 0);
+	res = tipc_sk_create(sock_net(sock->sk), new_sock, 0, kern);
 	if (res)
 		goto exit;
 	security_sk_clone(sock->sk, new_sock->sk);
